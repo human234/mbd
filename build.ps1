@@ -1,16 +1,18 @@
 <#
 .SYNOPSIS
-    Build (or flash) the HMI gauge demo inside the prebuilt HMI Docker image
-    (official Zephyr image + STM32CubeProgrammer CLI), from any directory
-    inside your west workspace.
+    Build (or flash) the HMI gauge demo inside the self-contained HMI Docker
+    image (official Zephyr ci-base container + ARM-only Zephyr SDK + baked
+    west workspace at /workdir + STM32CubeProgrammer CLI).
 
 .DESCRIPTION
-    Locates the west workspace root (the first directory walking up that
-    contains zephyr/), mounts it into the HMI image at /workdir, and runs
-    `west build`. Pass -Flash to run `west flash` instead (requires the
-    ST-Link probe to be visible in the container, see README-WINDOWS.md).
+    No workspace mount is needed: the image already contains the workspace
+    snapshot (make stage && make image, or get the prebuilt image). Runs
+    `west build` directly against /workdir. Pass -Flash to build+flash
+    instead (requires the ST-Link probe to be visible in the container,
+    see README-WINDOWS.md).
 
-    Requires: Docker Desktop (WSL2 backend). No Zephyr toolchain needed.
+    Requires: Docker Desktop (WSL2 backend). No Zephyr toolchain or west
+    workspace needed on the host.
 
 .EXAMPLE
     PS> .\build.ps1
@@ -25,25 +27,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$Image = "ghcr.io/human234/hmi-build:0.1.1"
-
-function Find-WorkspaceRoot {
-    $dir = [System.IO.DirectoryInfo](Get-Location).Path
-    while ($null -ne $dir) {
-        if (Test-Path (Join-Path $dir.FullName "zephyr")) {
-            return $dir.FullName
-        }
-        $dir = $dir.Parent
-    }
-    throw "No Zephyr workspace found (no 'zephyr' directory in this or any parent directory)."
-}
-
-$workspace = Find-WorkspaceRoot
+$Image = "ghcr.io/human234/hmi-build:0.2.0"
 
 if ($Flash) {
-    docker run --rm -it --privileged --workdir /workdir `
-        -v "${workspace}:/workdir" $Image west flash
+    docker run --rm -it --privileged --workdir /workdir $Image `
+        sh -lc "west build -b $Board -p always $App && west flash"
 } else {
-    docker run --rm -it --workdir /workdir `
-        -v "${workspace}:/workdir" $Image west build -b $Board -p always $App
+    docker run --rm -it --workdir /workdir $Image west build -b $Board -p always $App
 }

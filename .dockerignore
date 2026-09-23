@@ -1,0 +1,9 @@
+# Docker build context for docker/Dockerfile. Keep the context lean: only the
+# Dockerfile, the CubeProgrammer install tree, and docs are needed at image
+# build time (the SDK + workspace come via --build-context named contexts).
+.git
+**/.git
+build
+.cache
+.clangd
+*.mdc

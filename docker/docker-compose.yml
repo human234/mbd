@@ -1,29 +1,20 @@
-# One-command build for the HMI gauge demo using the prebuilt HMI image
-# (official Zephyr developer image + STM32CubeProgrammer CLI). Works on any
-# host that runs Docker (Windows via Docker Desktop with the WSL2 backend,
-# Linux, macOS).
+# One-command build for the HMI gauge demo using the self-contained HMI image
+# (official Zephyr ci-base container + ARM-only Zephyr SDK + baked west
+# workspace at /workdir + STM32CubeProgrammer CLI). No workspace mount is
+# needed: the image already contains the workspace snapshot; re-bake and
+# rebuild it after source changes (docker/rebake-workspace.sh -> make image).
 #
-# The image bundles the Zephyr SDK, all build tools, and the
-# STM32CubeProgrammer CLI so `west flash` works too; the west workspace (the
-# directory containing zephyr/ and modules/) is mounted at /workdir.
-#
-# Usage (from anywhere; the sample path inside the module is used):
-#   PowerShell:  $env:WORKSPACE = (Get-Location  # must be the workspace root
-#   cmd:         set WORKSPACE=%CD%
-#   Linux shell: export WORKSPACE=$(pwd)
+# Usage (from anywhere):
 #   docker compose -f modules/hmi/docker/docker-compose.yml run --rm hmi
-#
-# Or simply use the provided wrappers (Makefile / build.ps1 / build.cmd),
-# which locate the workspace root automatically.
+#   docker compose -f modules/hmi/docker/docker-compose.yml run --rm hmi-flash
 # Rebuild locally when needed (build context = this repo root):
-#   docker build -f docker/Dockerfile -t ghcr.io/human234/hmi-build:0.1.1 .
+#   docker build --build-context sdk-src=... --build-context ws-src=... \
+#     -f docker/Dockerfile -t ghcr.io/human234/hmi-build:0.2.0 .
 services:
   hmi:
-    image: ghcr.io/human234/hmi-build:0.1.1
+    image: ghcr.io/human234/hmi-build:0.2.0
     working_dir: /workdir
     init: true
-    volumes:
-      - ${WORKSPACE:?Set WORKSPACE to the west workspace root (the dir with zephyr/)}:/workdir
     command:
       - west
       - build
@@ -32,3 +23,13 @@ services:
       - -p
       - always
       - modules/hmi/samples/gauge_demo
+
+  hmi-flash:
+    image: ghcr.io/human234/hmi-build:0.2.0
+    working_dir: /workdir
+    init: true
+    privileged: true
+    command:
+      - sh
+      - -lc
+      - west build -b nucleo_g474re -p always modules/hmi/samples/gauge_demo && west flash

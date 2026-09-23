@@ -6,7 +6,11 @@
  * Pin conflicts resolved here:
  *  - green LED on PA5                  -> leds/pwmleds/timers2 disabled (PA5 = SPI1 SCK)
  *  - console/shell on lpuart1 (PA2/PA3) -> ST-LINK VCP (/dev/ttyACM0); usart1 (PC4/PC5) disabled
- *  - spi2/spi3 (PB12-15, PA15/PC10-12) disabled, their pins are not used
+ *  - spi2 (PB12-15) disabled, its pins are not used
+ *  - spi3 (PC10-12) carries the XPT2046 resistive touch of the MSP3520:
+ *      T_CLK=PC10(SCK) T_DIN=PC12(MOSI) T_DO=PC11(MISO)
+ *      T_CS=PA15(GPIO CS, replaces the spi3 NSS alt-function)
+ *      T_IRQ=PB7(GPIO, active-low pen-down edge IRQ)
  *
  * Board 3V3 and 5V header rails power the panel (backlight/VIN), no DT node.
  */
@@ -20,22 +24,7 @@
         zephyr,console = &lpuart1;
         zephyr,shell-uart = &lpuart1;
         zephyr,display = &ili9488_lcd;
-    };
-
-    lcd_gpios {
-        compatible = "gpio-leds";
-        lcd_dc: lcd_dc {
-            gpios = <&gpioc 6 GPIO_ACTIVE_HIGH>;
-            label = "LCD_DC";
-        };
-        lcd_rst: lcd_rst {
-            gpios = <&gpioc 8 GPIO_ACTIVE_LOW>;
-            label = "LCD_RESET";
-        };
-        lcd_cs: lcd_cs {
-            gpios = <&gpiob 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
-            label = "LCD_CS";
-        };
+        zephyr,touch = &xpt2046;
     };
 
     mipi_dbi: mipi_dbi {
@@ -52,17 +41,18 @@
             reg = <0>;
             mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
             /* 4 MHz matches the proven ili9488_diag SPI speed on this wiring. */
-            mipi-max-frequency = <DT_FREQ_M(4)>;
-            /* Physical GRAM is 320x480; rotation 270 => landscape 480x320
-             * with MADCTL MY|MV|BGR = 0xA8 (same as ili9488_diag). */
+            mipi-max-frequency = <DT_FREQ_M(22)>;
+            /* Physical GRAM is 320x480; rotation 0 keeps the panel in its
+             * native portrait orientation so the HMI demo matches the
+             * 320x480 Linux simulator layout (MADCTL BGR only). */
             width = <320>;
             height = <480>;
             /* RGB_888: the ILI9488 is driven in its native 18-bit RGB666 mode
              * (COLMOD 0x66, 3 bytes/pixel), the only mode validated to render
              * correct colors on this panel through the 4-wire SPI path. */
             pixel-format = <PANEL_PIXEL_FORMAT_RGB_888>;
-            rotation = <270>;
-            /* LCDWIKI MSP3520 initsq16 register table (proven in ili9488_diag). */
+            rotation = <180>;
+            /* LCDWIKI MSP3520 initsq16 register table. */
             frmctr1 = [b0 11];
             disctrl = [02 22 3b];
             pwctrl1 = [11 09];
@@ -98,10 +88,41 @@
 };
 
 &spi3 {
-    status = "disabled";
+	/* PA15 becomes a GPIO chip-select for the touch controller instead
+	 * of the spi3 NSS alternate function. */
+	pinctrl-0 = <&spi3_sck_pc10 &spi3_miso_pc11 &spi3_mosi_pc12>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioa 15 GPIO_ACTIVE_LOW>;
+
+	/* Upstream Zephyr xptek,xpt2046 (interleaved Z/X/Y read + cal). */
+	xpt2046: xpt2046@0 {
+		compatible = "xptek,xpt2046";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(1)>;
+		int-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>;
+
+		/* Raw 12-bit cal window — placeholders until four-corner cal.
+		 * Driver maps min/max raw -> 0..touchscreen-size-*, then
+		 * touchscreen-common scales into the ili9488 320x480 panel.
+		 * screen-width/height must match that span or scaling is skipped. */
+		min-x = <200>;
+		max-x = <3800>;
+		min-y = <200>;
+		max-y = <3800>;
+		touchscreen-size-x = <4096>;
+		touchscreen-size-y = <4096>;
+		z-threshold = <20>;
+		reads = <4>;
+
+		screen-width = <4096>;
+		screen-height = <4096>;
+		/* Lines controller X with panel height; drop or add
+		 * inverted-x/inverted-y if a corner lands mirrored. */
+		swapped-x-y;
+		display = <&ili9488_lcd>;
+	};
 };
 
-/* DMA disabled for the bisection test: match ili9488_diag (no DMA). */
 &dma1 {
     status = "disabled";
 };
