@@ -40,9 +40,9 @@
             compatible = "ilitek,ili9488";
             reg = <0>;
             mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
-            /* 42.5 MHz = APB2/4 (SPI1 ceiling 85 MHz, panel spec ~40 MHz,
-             * tuned on this wiring). Drop back to 22 MHz if glitches. */
-            mipi-max-frequency = <DT_FREQ_M(40)>;
+            /* 84 MHz = APB2/2, the SPI1 ceiling for this board's clock.
+             * Tuned: 42.5/22 MHz glitch-free, 84 MHz clean on this wiring. */
+            mipi-max-frequency = <DT_FREQ_M(84)>;
             /* Physical GRAM is 320x480; rotation 0 keeps the panel in its
              * native portrait orientation so the HMI demo matches the
              * 320x480 Linux simulator layout (MADCTL BGR only). */
@@ -133,9 +133,23 @@
 };
 
 &dma1 {
-    status = "disabled";
+	status = "okay";
+	/* G4 DMA1 has 8 channels; CH1..CH8 = IRQ 11..17, 96. The
+	 * interrupts property is missing from stm32g4.dtsi but required
+	 * by st,stm32-dma (without it the dma1 node can't be enabled). */
+	interrupts = <11 0>, <12 0>, <13 0>, <14 0>, <15 0>, <16 0>, <17 0>, <96 0>;
 };
 
 &dmamux1 {
-    status = "disabled";
+	status = "okay";
+};
+
+&spi1 {
+	/* dmamux1 ch0/ch1 route to DMA1 streams 1/2 (dma-offset 0).
+	 * G4 DMAMUX request IDs: SPI1_RX = 10, SPI1_TX = 11. */
+	dmas = <&dmamux1 1 11 (STM32_DMA_PERIPH_TX | STM32_DMA_PERIPH_8BITS |
+			       STM32_DMA_MEM_8BITS | STM32_DMA_PRIORITY_HIGH)>,
+	       <&dmamux1 0 10 (STM32_DMA_PERIPH_RX | STM32_DMA_PERIPH_8BITS |
+			       STM32_DMA_MEM_8BITS | STM32_DMA_PRIORITY_HIGH)>;
+	dma-names = "tx", "rx";
 };

@@ -33,11 +33,12 @@ void hmi_show(void)
         return;
     }
 
+    uint32_t iter = 0;
+    uint32_t last_report = 0;
+
     while (1) {
         uint32_t next;
         uint32_t now;
-        uint32_t iter = 0;
-        uint32_t last_report = 0;
 
         next = lv_timer_handler();
         iter++;
