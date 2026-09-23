@@ -40,8 +40,9 @@
             compatible = "ilitek,ili9488";
             reg = <0>;
             mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
-            /* 4 MHz matches the proven ili9488_diag SPI speed on this wiring. */
-            mipi-max-frequency = <DT_FREQ_M(22)>;
+            /* 42.5 MHz = APB2/4 (SPI1 ceiling 85 MHz, panel spec ~40 MHz,
+             * tuned on this wiring). Drop back to 22 MHz if glitches. */
+            mipi-max-frequency = <DT_FREQ_M(40)>;
             /* Physical GRAM is 320x480; rotation 0 keeps the panel in its
              * native portrait orientation so the HMI demo matches the
              * 320x480 Linux simulator layout (MADCTL BGR only). */
@@ -111,8 +112,8 @@
 		 * min/max raw -> 0..touchscreen-size-*, then touchscreen-common
 		 * scales into the ili9488 320x480 panel; screen-width/height
 		 * must match that span or scaling is skipped. */
-		min-x = <380>;
-		max-x = <3907>;
+		min-x = <1300>;
+		max-x = <4095>;
 		min-y = <683>;
 		max-y = <3800>;
 		touchscreen-size-x = <4096>;

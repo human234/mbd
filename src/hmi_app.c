@@ -35,8 +35,18 @@ void hmi_show(void)
 
     while (1) {
         uint32_t next;
+        uint32_t now;
+        uint32_t iter = 0;
+        uint32_t last_report = 0;
 
         next = lv_timer_handler();
+        iter++;
+        now = k_uptime_get_32();
+        if (now - last_report >= 5000) {
+            LOG_INF("lvgl loop: %u it/5s", iter);
+            iter = 0;
+            last_report = now;
+        }
         if (next == LV_NO_TIMER_READY) {
             next = LV_DEF_REFR_PERIOD;
         }
