@@ -7,14 +7,10 @@
 #include <hmi/hmi_gauge.h>
 
 #define HMI_BUTTON_TRANSITION_MS 120
-#define HMI_BUTTON_SCALE_NORMAL  256
-#define HMI_BUTTON_SCALE_PRESSED 246
 
 static const lv_style_prop_t g_trans_props[] = {
 	LV_STYLE_BG_COLOR,
 	LV_STYLE_BORDER_COLOR,
-	LV_STYLE_TRANSFORM_SCALE_X,
-	LV_STYLE_TRANSFORM_SCALE_Y,
 	0
 };
 static lv_style_transition_dsc_t g_trans;
@@ -218,14 +214,8 @@ static void button_apply_styles(lv_obj_t *btn, int width, int height)
 	lv_obj_set_style_border_color(btn, lv_color_hex(colorscheme[8]), 0);
 	lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_FULL, 0);
 	lv_obj_set_style_transition(btn, &g_trans, 0);
-	lv_obj_set_style_transform_scale_x(btn, HMI_BUTTON_SCALE_NORMAL, 0);
-	lv_obj_set_style_transform_scale_y(btn, HMI_BUTTON_SCALE_NORMAL, 0);
-	lv_obj_set_style_transform_pivot_x(btn, width / 2, 0);
-	lv_obj_set_style_transform_pivot_y(btn, height / 2, 0);
 
 	lv_obj_set_style_bg_color(btn, lv_color_hex(colorscheme[7]), LV_STATE_PRESSED);
-	lv_obj_set_style_transform_scale_x(btn, HMI_BUTTON_SCALE_PRESSED, LV_STATE_PRESSED);
-	lv_obj_set_style_transform_scale_y(btn, HMI_BUTTON_SCALE_PRESSED, LV_STATE_PRESSED);
 
 	lv_obj_set_style_border_color(btn, lv_color_hex(colorscheme[15]), LV_STATE_FOCUSED);
 	lv_obj_set_style_border_width(btn, 2, LV_STATE_FOCUSED);

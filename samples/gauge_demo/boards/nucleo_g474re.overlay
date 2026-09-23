@@ -98,27 +98,35 @@
 	xpt2046: xpt2046@0 {
 		compatible = "xptek,xpt2046";
 		reg = <0>;
-		spi-max-frequency = <DT_FREQ_M(1)>;
+		spi-max-frequency = <DT_FREQ_M(10)>;
 		int-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>;
 
-		/* Raw 12-bit cal window — placeholders until four-corner cal.
-		 * Driver maps min/max raw -> 0..touchscreen-size-*, then
-		 * touchscreen-common scales into the ili9488 320x480 panel.
-		 * screen-width/height must match that span or scaling is skipped. */
-		min-x = <200>;
-		max-x = <3800>;
-		min-y = <200>;
+		/* Calibrated so a tap on the Gauges tab (top-left) lands on
+		 * LVGL (0,0). Measured Gauges-tab tap: raw (3907, 683) =>
+		 * that corner maps to the X maximum and Y minimum. The touch
+		 * axes land X-increasing left-to-right and Y-increasing
+		 * downward on the panel; min-x comes from the rightmost tab
+		 * (raw ~416 in a tab-row sweep), max-y stays a placeholder
+		 * until a bottom-corner tap is measured. Driver maps
+		 * min/max raw -> 0..touchscreen-size-*, then touchscreen-common
+		 * scales into the ili9488 320x480 panel; screen-width/height
+		 * must match that span or scaling is skipped. */
+		min-x = <380>;
+		max-x = <3907>;
+		min-y = <683>;
 		max-y = <3800>;
 		touchscreen-size-x = <4096>;
 		touchscreen-size-y = <4096>;
-		z-threshold = <20>;
+		z-threshold = <100>;
 		reads = <4>;
+
+		/* Invert Y so LVGL y=0 is the raw-y-minimum edge (the Gauges
+		 * tab). If the first bottom-corner tap lands mirror-inverted,
+		 * flip this to max-y = <683> with no inverted-y instead. */
+		inverted-y;
 
 		screen-width = <4096>;
 		screen-height = <4096>;
-		/* Lines controller X with panel height; drop or add
-		 * inverted-x/inverted-y if a corner lands mirrored. */
-		swapped-x-y;
 		display = <&ili9488_lcd>;
 	};
 };
