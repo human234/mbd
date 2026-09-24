@@ -36,9 +36,22 @@ USER root
 # --- 1) Zephyr SDK (ARM-only subset + hosttools) ---
 COPY --from=sdk-src gnu/arm-zephyr-eabi /opt/toolchains/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi
 COPY --from=sdk-src hosttools /opt/toolchains/zephyr-sdk-1.0.1/hosttools
-COPY --from=sdk-src setup.sh sdk_version cmake sdk_gnu_toolchains /opt/toolchains/zephyr-sdk-1.0.1/
+# Multi-source COPY puts a directory source's CONTENTS straight into dest
+# (no basename subdir), which used to flatten cmake/* onto the SDK root and
+# break Zephyr-sdkConfigVersion.cmake's `../sdk_version` lookup. Copy `cmake`
+# to an explicit subdir destination instead; mirror the host SDK layout:
+#   <sdk>/{cmake/Zephyr-sdkConfig*.cmake, sdk_version, gnu/, hosttools, ...}
+COPY --from=sdk-src setup.sh sdk_version sdk_gnu_toolchains /opt/toolchains/zephyr-sdk-1.0.1/
+COPY --from=sdk-src cmake /opt/toolchains/zephyr-sdk-1.0.1/cmake/
 RUN set -eux; \
     chmod +x /opt/toolchains/zephyr-sdk-1.0.1/setup.sh; \
+    # The host SDK's setup.sh patched every ELF's PT_INTERP to the ABSOLUTE
+    # host path /home/peter996/zephyr-sdk-1.0.1/.../ld-linux-x86-64.so.2, so
+    # those binaries cannot exec in a container. Mirror that prefix with a
+    # symlink into the real SDK so the absolute interpreters resolve (this
+    # also covers dtc under hosttools/sysroots and the arm gcc chain). \
+    mkdir -p /home/peter996; \
+    ln -s /opt/toolchains/zephyr-sdk-1.0.1 /home/peter996/zephyr-sdk-1.0.1; \
     /opt/toolchains/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc --version
 
 # --- 2) Baked west workspace (offline builds, no -v mount) ---

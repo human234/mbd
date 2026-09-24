@@ -29,7 +29,7 @@
 
     After the tarball is in place, rebuild the image (build context = this
     repo root so the Dockerfile COPY path resolves):
-        docker build -f docker\Dockerfile -t ghcr.io/human234/hmi-build:0.1.1 .
+        docker build -f docker\Dockerfile -t ghcr.io/human234/hmi-build:0.2.0 .
 
 .EXAMPLE
     PS> .\fetch-stm32cubeprog.ps1
@@ -51,5 +51,5 @@ docker\stm32cubeprog-tree.tar.gz is missing. See the header comment of this
 script for how to (re)generate it from ST's installer on a Linux machine.
 
 Then rebuild the image:
-  docker build -f docker\Dockerfile -t ghcr.io/human234/hmi-build:0.1.1 .
+  docker build -f docker\Dockerfile -t ghcr.io/human234/hmi-build:0.2.0 .
 "@

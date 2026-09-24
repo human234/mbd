@@ -42,7 +42,7 @@
             mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
             /* 84 MHz = APB2/2, the SPI1 ceiling for this board's clock.
              * Tuned: 42.5/22 MHz glitch-free, 84 MHz clean on this wiring. */
-            mipi-max-frequency = <DT_FREQ_M(84)>;
+            mipi-max-frequency = <DT_FREQ_M(43)>;
             /* Physical GRAM is 320x480; rotation 0 keeps the panel in its
              * native portrait orientation so the HMI demo matches the
              * 320x480 Linux simulator layout (MADCTL BGR only). */

@@ -24,8 +24,9 @@ Makefile                 Linux / WSL build/flash wrappers
 ## Windows users (Docker)
 
 No Zephyr SDK install is required: the prebuilt HMI image
-`ghcr.io/human234/hmi-build:0.1.1` bundles the Zephyr SDK (1.0.x), `west`,
-and the STM32CubeProgrammer CLI (so `west flash` works in-container too).
+`ghcr.io/human234/hmi-build:0.2.0` bundles a baked west workspace at `/workdir`
+(Zephyr SDK 1.0.1 + `west` + the HMI app + STM32CubeProgrammer CLI), so
+`west build`/`west flash` work fully in-container too.
 See [README-WINDOWS.md](README-WINDOWS.md) for the full Docker Desktop
 walkthrough (build, flash via `usbipd-win`, troubleshooting).
 

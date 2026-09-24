@@ -68,8 +68,8 @@ for f in setup.sh sdk_version cmake sdk_gnu_toolchains; do
 done
 
 echo "== staging west workspace (modules used by the gauge demo) =="
-rsync -a --exclude='.git' "$WS_DIR/.west"                 "$stage_ws/"
-rsync -a --exclude='.git' "$WS_DIR/zephyr"                "$stage_ws/"
+rsync -a --exclude='.git' --exclude='.cache' "$WS_DIR/.west"   "$stage_ws/"
+rsync -a --exclude='.git' --exclude='.cache' "$WS_DIR/zephyr"  "$stage_ws/"
 
 mkdir -p "$stage_ws/modules/hal" "$stage_ws/modules/lib/gui" "$stage_ws/modules/lib" "$stage_ws/apps"
 rsync -a --exclude='.git' "$WS_DIR/modules/hal/stm32"     "$stage_ws/modules/hal/"
@@ -78,8 +78,11 @@ rsync -a --exclude='.git' "$WS_DIR/modules/lib/gui/lvgl"  "$stage_ws/modules/lib
 rsync -a --exclude='.git' "$WS_DIR/modules/lib/picolibc"  "$stage_ws/modules/lib/"
 # modules/hmi is a symlink -> ../apps/HMI in the real workspace; copy the link,
 # NOT its contents, then provide the target under apps/.
+# Never bake build dirs / host venv: their CMakeCache.txt carries absolute
+# host paths that break `west build -p always` inside the container.
 rsync -a "$WS_DIR/modules/hmi"                            "$stage_ws/modules/"
-rsync -a --exclude='.git' "$WS_DIR/apps/HMI"              "$stage_ws/apps/"
+rsync -a --exclude='.git' --exclude='build' --exclude='build-*' --exclude='.venv' \
+	"$WS_DIR/apps/HMI"                                    "$stage_ws/apps/"
 # Optional: MCUboot (16 MB) if a signed/chainloader build is ever needed.
 rsync -a --exclude='.git' "$WS_DIR/bootloader/mcuboot"    "$stage_ws/bootloader/"
 

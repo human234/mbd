@@ -1,37 +1,44 @@
 <#
 .SYNOPSIS
-    Build (or flash) the HMI gauge demo inside the self-contained HMI Docker
-    image (official Zephyr ci-base container + ARM-only Zephyr SDK + baked
-    west workspace at /workdir + STM32CubeProgrammer CLI).
+    Build the HMI gauge demo inside the persistent `hmi-build` container.
 
 .DESCRIPTION
-    No workspace mount is needed: the image already contains the workspace
-    snapshot (make stage && make image, or get the prebuilt image). Runs
-    `west build` directly against /workdir. Pass -Flash to build+flash
-    instead (requires the ST-Link probe to be visible in the container,
-    see README-WINDOWS.md).
+    Uses the self-contained HMI image ghcr.io/human234/hmi-build:0.2.0
+    (Zephyr SDK + baked west workspace at /workdir + STM32CubeProgrammer).
+    A long-running, privileged container named `hmi-build` is (re)created on
+    first use and `west build` runs inside it via `docker exec`. The build dir
+    lives in the container, so repeat builds are incremental.
 
-    Requires: Docker Desktop (WSL2 backend). No Zephyr toolchain or west
-    workspace needed on the host.
+    To flash, the ST-Link probe must first be passed into the WSL2 VM
+    (usbipd-win, see README-WINDOWS.md).
 
 .EXAMPLE
     PS> .\build.ps1
-    PS> .\build.ps1 -Board stm32g474_dk
-    PS> .\build.ps1 -Flash
+    PS> .\build.ps1 -Pristine
 #>
+[CmdletBinding()]
 param(
     [string]$Board = "nucleo_g474re",
-    [string]$App = "modules/hmi/samples/gauge_demo",
-    [switch]$Flash
+    [string]$App = "samples/gauge_demo",
+    [switch]$Pristine
 )
 
 $ErrorActionPreference = "Stop"
 
-$Image = "ghcr.io/human234/hmi-build:0.2.0"
+$Image   = "ghcr.io/human234/hmi-build:0.2.0"
+$CtrName = "hmi-build"
+$WorkDir = "/workdir/apps/HMI"
 
-if ($Flash) {
-    docker run --rm -it --privileged --workdir /workdir $Image `
-        sh -lc "west build -b $Board -p always $App && west flash"
+# Ensure the persistent build container exists and is running (idempotent).
+$ctrId = docker ps -aq --filter "name=^/$CtrName$"
+if (-not $ctrId) {
+    docker run -d --rm --privileged --name $CtrName -w $WorkDir $Image sleep infinity
+} elseif ((docker inspect --format '{{.State.Running}}' $CtrName) -ne "true") {
+    docker start $CtrName
+}
+
+if ($Pristine) {
+    docker exec -w $WorkDir $CtrName west build -b $Board -p always $App
 } else {
-    docker run --rm -it --workdir /workdir $Image west build -b $Board -p always $App
+    docker exec -w $WorkDir $CtrName west build -b $Board $App
 }
