@@ -59,6 +59,21 @@ uint32_t colorscheme[] = {
 
 static float gauge_test_value = 1450;
 
+float hmi_gauge_demo_get(void)
+{
+    return gauge_test_value;
+}
+
+void hmi_gauge_demo_set(float value)
+{
+    gauge_test_value = value;
+}
+
+float *hmi_gauge_demo_value(void)
+{
+    return &gauge_test_value;
+}
+
 void hmi_gauge_show_ui(lv_obj_t *parent)
 {
     lv_obj_t *gauge = hmi_ui_gauge_create(parent, 160, "MOTOR", "rpm");

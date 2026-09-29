@@ -1,0 +1,100 @@
+/*
+ * HMI gauge demo for ST NUCLEO-H743ZI.
+ *
+ * Board defaults (nucleo_h743zi.dts) kept enabled:
+ *  - absolutely needed: usart3 (PD8/PD9, ST-Link VCP console+shell),
+ *    lpuart1 (PB6/PB7, Arduino D0/D1 serial), the RMII Ethernet
+ *    (mac/mdio, owns PA7 = SPI1 MOSI on the G4! here we use PB5),
+ *    USB OTG FS (PA11/PA12), FDCAN1 (PD0/PD1), LEDs (PB0/PE1/PB14),
+ *    DAC1 (PA4), RNG, IWDG.
+ *
+ * Display + touch pinout (matches the Gauge board wiring; Ethernet and
+ * Arduino serial stay live, so three G4 pins move):
+ *  - Display SPI1: SCK=PA5(D13) MISO=PA6(D12) MOSI=PB5(D11) CS=PD14(D10)
+ *    -> exactly the board's default SPI1, nothing to override.
+ *  - Display GPIOs: DC=PC6, RESET=PC8 (same as the G4 build).
+ *  - Touch SPI3: SCK=PC10 MISO=PC11 MOSI=PC12 (same as the G4 build),
+ *    CS=PA15 (same), IRQ=PE11(D5) (- G4 used PB7 = lpuart1 RX here).
+ *
+ * No SPI DMA on the H7 for now: the DMAMUX request ids differ from the
+ * G4 and need verifying against RM0433; polling suffices for bring-up.
+ */
+
+#include <zephyr/dt-bindings/display/panel.h>
+#include <freq.h>
+
+/ {
+    chosen {
+        zephyr,display = &ili9488_lcd;
+        zephyr,touch = &xpt2046;
+    };
+
+    mipi_dbi: mipi_dbi {
+        compatible = "zephyr,mipi-dbi-spi";
+        spi-dev = <&spi1>;
+        dc-gpios = <&gpioc 6 GPIO_ACTIVE_HIGH>;
+        reset-gpios = <&gpioc 8 GPIO_ACTIVE_LOW>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        status = "okay";
+
+        ili9488_lcd: ili9488@0 {
+            compatible = "ilitek,ili9488";
+            reg = <0>;
+            mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
+            /* Panel register table matches the G4 build (same LCD module).
+             * H7 SPI1 kernel clock is PLL1_Q = 480 MHz; the reached wire
+             * rate may differ from the G4's ~43 MHz -> retune if needed. */
+            mipi-max-frequency = <DT_FREQ_M(43)>;
+            width = <320>;
+            height = <480>;
+            pixel-format = <PANEL_PIXEL_FORMAT_RGB_888>;
+            rotation = <180>;
+            frmctr1 = [b0 11];
+            disctrl = [02 22 3b];
+            pwctrl1 = [11 09];
+            pwctrl2 = [41];
+            vmctrl = [00 0a 80 40];
+            pgamctrl = [00 07 10 09 17 0b 41 89 4b 0a 0c 0e 18 1b 0f];
+            ngamctrl = [00 17 1a 04 0e 06 2f 45 43 02 0a 09 32 36 0f];
+            status = "okay";
+        };
+    };
+};
+
+&spi1 {
+    /* pinctrl + cs-gpios are the board defaults (PA5/PA6/PB5, PD14). */
+    status = "okay";
+};
+
+&spi3 {
+    pinctrl-0 = <&spi3_sck_pc10 &spi3_miso_pc11 &spi3_mosi_pc12>;
+    pinctrl-names = "default";
+    cs-gpios = <&gpioa 15 GPIO_ACTIVE_LOW>;
+    status = "okay";
+
+    xpt2046: xpt2046@0 {
+        compatible = "xptek,xpt2046";
+        reg = <0>;
+        spi-max-frequency = <DT_FREQ_M(10)>;
+        /* PE11 = Arduino D5; PB7 (G4 wiring) stays lpuart1 RX here. */
+        int-gpios = <&gpioe 11 GPIO_ACTIVE_LOW>;
+
+        /* Raw XPT2046 cal is panel- and driver-raw, independent of the
+         * host MCU, so the values from the G4 stays valid on this panel. */
+        min-x = <1300>;
+        max-x = <4095>;
+        min-y = <683>;
+        max-y = <3800>;
+        touchscreen-size-x = <4096>;
+        touchscreen-size-y = <4096>;
+        z-threshold = <100>;
+        reads = <10>;
+
+        inverted-y;
+
+        screen-width = <4096>;
+        screen-height = <4096>;
+        display = <&ili9488_lcd>;
+    };
+};

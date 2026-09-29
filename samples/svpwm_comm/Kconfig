@@ -1,0 +1,29 @@
+mainmenu "svpwm_comm"
+
+source "Kconfig.zephyr"
+
+choice SVPWM_COMM_ROLE
+	prompt "SVPWM comm role"
+	default SVPWM_COMM_ROLE_HOST
+	help
+	  One board runs each side of the comm link:
+
+	    host   (NUCLEO-G474RE): SVPWM 3-phase inverter on TIM1, SPI
+	           command link from the H7S78-DK slave, and the comm host
+	           peer (drives the gauge with SET_GAUGE, probes with
+	           PING/GET_INFO, watches the telemetry stream). No LVGL.
+	    device (NUCLEO-H743ZI): comm device handlers (PING/GET_INFO/
+	           SET_GAUGE) and the 500 ms telemetry stream, on top of
+	           the full ILI9488/LVGL display stack so the needle sweep
+	           is visible.
+
+	  Both sides connect on their Arduino D0/D1 header serial
+	  (G474 usart1 PC4/PC5 <-> H743 lpuart1 PB6/PB7) @115200.
+
+config SVPWM_COMM_ROLE_HOST
+	bool "host role (G474: SVPWM + comm host peer)"
+
+config SVPWM_COMM_ROLE_DEVICE
+	bool "device role (H743: comm device + display)"
+
+endchoice

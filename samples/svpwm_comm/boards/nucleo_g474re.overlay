@@ -1,0 +1,89 @@
+/*
+ * SVPWM on NUCLEO-G474RE -- 3-phase inverter drive via TIM1.
+ *
+ * Register-level port of the STM32H743ZI SVPWM (control.c) to the G474,
+ * with the timer constants/values taken from the corrected G474RETEST
+ * reference project (Core/Src/main.c):
+ *   - TIM1 center-aligned mode 1, prescaler 0 (170 MHz), ARR = 3935
+ *     -> 2*3935 / 170e6 = 46.3 us => 21.6 kHz switching
+ *   - PWM mode 1, active-low polarity on all channels
+ *   - deadtime DTG = 170  (~1.25 us) -- fixes the wrong deadtime carried
+ *     over from the H743ZI port (which used a bogus DTG value)
+ *
+ * Pin mapping (matches G474RETEST stm32g4xx_hal_msp.c HAL_TIM_MspPostInit):
+ *   TIM1_CH1  PA8  TIM1_CH1N PA11
+ *   TIM1_CH2  PA9  TIM1_CH2N PA12
+ *   TIM1_CH3  PA10 TIM1_CH3N PB15
+ *
+ * The TIM1 pins/counters are driven directly from control.c (CMSIS register
+ * access, like the H743ZI project), so the pwm node below is only used to
+ * request the pinctrl muxing of the six output pins.
+ *
+ * FDCAN1 is enabled by default on the Nucleo-G474RE board using PA11 (RX)
+ * and PA12 (TX) -- the same physical pins as TIM1_CH1N/CH2N -- so it must
+ * be disabled to free those pins for the complementary PWM outputs.
+ */
+
+&timers1 {
+	status = "okay";
+	st,prescaler = <0>;
+	st,countermode = <0x20>;
+
+	pwm1: pwm {
+		status = "okay";
+
+		pinctrl-0 = <
+			&tim1_ch1_pa8
+			&tim1_ch1n_pa11
+
+			&tim1_ch2_pa9
+			&tim1_ch2n_pa12
+
+			&tim1_ch3_pa10
+			&tim1_ch3n_pb15
+		>;
+		pinctrl-names = "default";
+	};
+};
+
+/* Free PA11/PA12 (FDCAN1 RX/TX) for TIM1_CH1N / TIM1_CH2N */
+&fdcan1 {
+	status = "disabled";
+};
+
+/*
+ * SPI command link (master side).
+ *
+ * The H7S78-DK slave drives the SVPWM reference (frequency + magnitude) over
+ * an SPI frame, and notifies the master by raising a GPIO line when a new
+ * command is ready:
+ *
+ *   SPI1 master  -> H7S78 SPI4 slave :  SCK=PA5, MISO=PA6, MOSI=PA7, CS=PB6
+ *   notify slave -> master          :  slave PD12 -> master PC7
+ *
+ * PC7 is an input the master watches (rising edge = new command frame ready);
+ * on a rising edge the master clocks an 8-byte full-duplex frame from the
+ * slave and applies set_frequency()/set_magnitude().
+ */
+&spi1 {
+	status = "okay";
+	pinctrl-0 = <&spi1_sck_pa5 &spi1_miso_pa6 &spi1_mosi_pa7>;
+	pinctrl-names = "default";
+};
+
+/*
+ * HMI comm link (host side) to the H743 svpwm_comm device role: usart1 on PC4(TX)/PC5(RX),
+ * 115200, the board's default usart1 mapping. Backend selected via the
+ * zephyr,comm chosen node (binding 'hmi,comm-uart' from the HMI module).
+ */
+/ {
+	chosen {
+		zephyr,comm = &hmi_comm0;
+	};
+
+	hmi_comm0: hmi-comm {
+		compatible = "hmi,comm-uart";
+		uart = <&usart1>;
+		status = "okay";
+	};
+};

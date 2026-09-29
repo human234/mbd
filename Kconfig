@@ -26,3 +26,59 @@ menuconfig HMI
       specific settings (color depth, memory pool, VDB size) and the
       zephyr,display chosen node remain the consumer's responsibility.
 
+menuconfig HMI_COMM
+    bool "HMI communication subsystem"
+    help
+      Transport-agnostic message transport for the HMI. The core does
+      framing (sync byte, msg id, CRC16), byte rings, an RX thread and
+      dispatch to registered handlers. Hardware backends are selected
+      through the zephyr,comm chosen devicetree node.
+
+      Wire protocol (see include/hmi/comm/hmi_comm_proto.h):
+        0xA5 | len(1) | id(1) | payload(len) | crc16-ccitt(2, LE)
+
+if HMI_COMM
+
+config HMI_COMM_UART
+    bool "UART backend"
+    select SERIAL
+    select UART_INTERRUPT_DRIVEN
+    help
+      UART backend for the zephyr,comm chosen node with compatible
+      "hmi,comm-uart" (device from its 'uart' phandle). Interrupt
+      driven: RX drain into the comm byte ring from the UART ISR, TX
+      drained out of the comm TX ring on TX-ready interrupts.
+
+config HMI_COMM_LOG_LEVEL
+    int "Communication log level"
+    range 0 4
+    default 3
+    help
+      Log level for the communication core and UART backend.
+
+config HMI_COMM_RX_THREAD_PRIO
+    int "Communication RX thread priority"
+    default 1
+    help
+      Priority of the thread that frames and dispatches incoming
+      messages. 1 keeps it below the user-input thread (-1) and above
+      the LVGL flush thread (4).
+
+config HMI_COMM_RX_THREAD_STACK
+    int "Communication RX thread stack size"
+    default 1024
+
+config HMI_COMM_RX_RING_SIZE
+    int "RX byte ring size"
+    default 512
+
+config HMI_COMM_TX_RING_SIZE
+    int "TX byte ring size"
+    default 512
+
+config HMI_COMM_MAX_HANDLERS
+    int "Maximum registered message handlers"
+    default 8
+
+endif # HMI_COMM
+

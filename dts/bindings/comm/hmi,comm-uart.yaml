@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: HMI communication controller (UART backend)
+
+compatible: "hmi,comm-uart"
+
+properties:
+  uart:
+    type: phandle
+    required: true
+    description: |
+      UART device carrying the HMI comm link.
