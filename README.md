@@ -11,24 +11,24 @@ CMakeLists.txt           zephyr_library_named(hmi)
 Kconfig                  CONFIG_HMI gate + required LVGL selects
 include/hmi/             public headers (single entry point: <hmi/hmi.h>)
 src/                     library sources
-samples/gauge_demo/      runnable example app (nucleo_g474re + ILI9488)
-docker/                  Dockerfile + compose for the prebuilt HMI image
-                         (Zephyr tools + STM32CubeProgrammer CLI)
-                         + auto-install.xml + fetch-stm32cubeprog.ps1
-                         (how the one-time ST install tree is produced)
-build.ps1 / build.cmd    Windows build/flash wrappers (no toolchain needed)
-flash.ps1 / flash.cmd
-Makefile                 Linux / WSL build/flash wrappers
+samples/display_demo/    runnable example app (nucleo_g474re + ILI9488)
+samples/motor_hmi/       panel + touch + LVGL app (nucleo_h743zi only)
+samples/svpwm_comm/      two-role comm demo (host: G474RE, device: H743ZI)
+zccli/                   end-user Docker toolchain: edit one .c file, then
+                         `zccli.ps1 build` / `zccli.ps1 flash` (no Zephyr
+                         install on the host). See zccli/README.md.
+scripts/uart_host.py     host-side UART test tool for the comm protocol
+Makefile                 zccli image wrappers (stage / image / push)
 ```
 
 ## Windows users (Docker)
 
-No Zephyr SDK install is required: the prebuilt HMI image
-`ghcr.io/human234/hmi-build:0.2.0` bundles a baked west workspace at `/workdir`
-(Zephyr SDK 1.0.1 + `west` + the HMI app + STM32CubeProgrammer CLI), so
-`west build`/`west flash` work fully in-container too.
-See [README-WINDOWS.md](README-WINDOWS.md) for the full Docker Desktop
-walkthrough (build, flash via `usbipd-win`, troubleshooting).
+No Zephyr SDK install is required: [`zccli/`](zccli/README.md) ships a
+prebuilt image (`ghcr.io/human234/zccli`) with the toolchain and a baked,
+pruned west workspace. You edit one `.c` file and run `.\zccli.ps1 build`
+then `.\zccli.ps1 flash`; the source stays on the host, only the toolchain
+runs in the container. See [zccli/README.md](zccli/README.md) for setup
+(`setup`, `doctor`) and the daily loop.
 
 ## Public API
 
@@ -50,7 +50,7 @@ extern uint32_t colorscheme[];
 ## Consuming the module
 
 **Windows without any Zephyr install?** Read
-[README-WINDOWS.md](README-WINDOWS.md) — builds via Docker only.
+[zccli/README.md](zccli/README.md) — builds via Docker only.
 
 The easiest way is the ready-made west workspace manifest
 ([`human234/hmi-workspace`](https://github.com/human234/hmi-workspace)),
@@ -59,7 +59,7 @@ which pins Zephyr `v4.4.2` and installs this repo at `modules/hmi`:
 ```sh
 west init -m https://github.com/human234/hmi-workspace hmi-workspace
 cd hmi-workspace && west update
-west build -p always -b nucleo_g474re modules/hmi/samples/gauge_demo
+west build -p always -b nucleo_g474re modules/hmi/samples/display_demo
 ```
 
 Or add the module to an existing west workspace by hand:
@@ -107,9 +107,13 @@ Or add the module to an existing west workspace by hand:
 ## Build the bundled sample
 
 ```sh
-west build -p always -b nucleo_g474re samples/gauge_demo
+west build -p always -b nucleo_g474re samples/display_demo
 west flash -d build
 ```
+
+`samples/motor_hmi` and `samples/svpwm_comm` also have their own `Makefile`
+(`make` / `make flash` / `make clean`), which wrap the same `west` calls per
+board/role.
 
 ## Notes
 

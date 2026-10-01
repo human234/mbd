@@ -1,4 +1,7 @@
 **/build
 .clangd
 **/.cache
-docker/stm32cubeprog-tree.tar.gz
+**/__pycache__/
+compile_commands.json
+# zccli: user source copies live here (staged by entrypoint.sh)
+zccli/app/src/user/

@@ -196,7 +196,7 @@ rsync -a "$WS_DIR/modules/hmi" "$stage_ws/modules/"
 # break `west build -p always` inside the container.
 #
 # 'build' and 'stm32cubeprog-tree.tar.gz' contain no '/', so rsync matches
-# them at any depth (samples/svpwm_comm/build, docker/stm32cubeprog-tree.tar.gz).
+# them at any depth (e.g. samples/svpwm_comm/build).
 # The tarball is excluded because zccli flashes from the host and the image
 # ships no STM32CubeProgrammer at all.
 rsync -a --exclude='.git' --exclude='.cache' --exclude='build' --exclude='build-*' \

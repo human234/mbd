@@ -1,9 +1,12 @@
-# Docker build context for docker/Dockerfile. Keep the context lean: only the
-# Dockerfile, the CubeProgrammer install tree, and docs are needed at image
-# build time (the SDK + workspace come via --build-context named contexts).
+# Docker build context for zccli/Dockerfile (see zccli/docker-build.sh, which
+# passes this repo as the context). Keep the context lean: the only file taken
+# from the context is zccli/entrypoint.sh -- the SDK + workspace arrive via
+# --build-context named contexts -- but everything not ignored is still
+# compressed and sent to the daemon.
 .git
 **/.git
-build
-.cache
+**/build
+**/.cache
+**/__pycache__
 .clangd
 *.mdc
