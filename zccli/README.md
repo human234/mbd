@@ -18,6 +18,10 @@ toolchain lives in the container.
 | **A USB cable** on the board's ST-LINK port | the mini-B / USB-C port next to the big USB port |
 | **Power on** the board | the green `PWR` LED must be lit |
 
+`zccli.ps1` runs on Windows PowerShell 5.1 (built into Windows — no install
+needed) and on PowerShell 7. `.\zccli.ps1 doctor` prints which one you are
+using.
+
 Then, from this folder:
 
 ```powershell

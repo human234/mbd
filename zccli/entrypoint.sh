@@ -9,6 +9,7 @@
 # command names below.
 #
 #   build [FILE.c ...] [--board <board>] [--clean]
+#   sample [NAME] [--board <board>] [--clean]
 #   export
 #   size
 #   clean
@@ -24,6 +25,13 @@ BUILD_ROOT="${ZC_BUILD_ROOT:-/build}"
 SRC="${ZC_SRC:-/src}"
 OUT="${ZC_OUT:-$SRC/out}"
 DEFAULT_BOARD="${ZC_BOARD:-nucleo_h743zi}"
+
+# Bundled demo apps that `zccli sample` can build instead of the template.
+SAMPLES_DIR="${ZC_SAMPLES_DIR:-$WORKDIR/apps/HMI/samples}"
+
+# Which app the last build used, so export/size/clean/doctor keep working
+# after a `sample` build without the user having to repeat the name.
+LAST_APP_FILE="$BUILD_ROOT/last-app"
 
 # Basenames staged into the template by stage_user_files(); see below.
 STAGED_FILES=()
@@ -57,6 +65,11 @@ zccli -- builds and flashes your screen without touching Zephyr.
       With no file, every top-level .c in the project folder is used.
       Default board: nucleo_h743zi (override with --board).
 
+  zccli sample [NAME] [--board <board>] [--clean]
+      Build one of the bundled demo apps instead of your own .c file(s).
+      With no NAME, list what is available. export/size/clean/flash all
+      follow the last build, so they work unchanged afterwards.
+
   zccli export          Copy the finished firmware into ./out/
   zccli size            Show flash/RAM usage for the last build
   zccli clean [--board] Delete the cached build for that board
@@ -84,8 +97,68 @@ die() {
 
 # ---------------------------------------------------------------- helpers
 
-build_dir_for() {
-	printf '%s/%s' "$BUILD_ROOT" "$1"
+build_dir_for() { # build_dir_for <board> [sample-name]
+	local board="$1" name="${2:-}"
+	if [ -n "$name" ]; then
+		printf '%s/sample-%s/%s' "$BUILD_ROOT" "$name" "$board"
+	else
+		printf '%s/%s' "$BUILD_ROOT" "$board"
+	fi
+}
+
+# Record which app the last successful build used, as three fields:
+#   template - <board>
+#   sample <name> <board>
+# export/size/clean/doctor read it back so the user never has to repeat the
+# sample name, and so a sample build can never overwrite the template's cache.
+write_last() { # write_last <kind> <sample-name-or--> <board>
+	mkdir -p "$BUILD_ROOT" 2>/dev/null || true
+	printf '%s %s %s\n' "$1" "${2:--}" "$3" >"$LAST_APP_FILE"
+}
+
+# Fill TARGET_KIND / TARGET_NAME / TARGET_BOARD / TARGET_BDIR from the
+# recorded last build. An optional argument overrides the board.
+# No state file means "template", which is exactly what caches built before
+# `sample` existed hold.
+resolve_last() { # resolve_last [board-override]
+	local kind="template" name="" board="$DEFAULT_BOARD"
+	local k n b
+
+	if [ -f "$LAST_APP_FILE" ]; then
+		read -r k n b <"$LAST_APP_FILE" || true
+		case "${k:-}" in
+		template | sample)
+			kind="$k"
+			if [ "${n:--}" != "-" ]; then
+				name="$n"
+			fi
+			if [ -n "${b:-}" ]; then
+				board="$b"
+			fi
+			;;
+		esac
+	fi
+
+	if [ -n "${1:-}" ]; then
+		board="$1"
+	fi
+
+	TARGET_KIND="$kind"
+	TARGET_NAME="$name"
+	TARGET_BOARD="$board"
+	TARGET_BDIR="$(build_dir_for "$board" "$name")"
+}
+
+# Every demo app shipped in the image that has a CMakeLists.txt.
+list_samples() {
+	local d
+	if [ -d "$SAMPLES_DIR" ]; then
+		for d in "$SAMPLES_DIR"/*; do
+			if [ -f "$d/CMakeLists.txt" ]; then
+				basename "$d"
+			fi
+		done
+	fi
 }
 
 require_app() {
@@ -273,6 +346,125 @@ cmd_build() {
 		exit 1
 	fi
 
+	write_last template - "$board"
+	report_usage "$TMPLOG" "$bdir"
+	log ""
+	cmd_export "$board"
+}
+
+# ---------------------------------------------------------------- sample
+
+# Build one of the demo apps bundled in the image instead of the user's own
+# .c files. Same shape as cmd_build, minus stage_user_files/require_app: the
+# samples carry their own sources and prj.conf, and staging the template would
+# be pointless (and would leave stale copies behind for the next `build`).
+cmd_sample() {
+	local board="$DEFAULT_BOARD"
+	local clean=0
+	local name=""
+
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--board)
+			[ $# -ge 2 ] || die "--board needs a value"
+			board="$2"
+			shift 2
+			;;
+		--board=*)
+			board="${1#--board=}"
+			shift
+			;;
+		--clean | -c)
+			clean=1
+			shift
+			;;
+		-h | --help)
+			log "usage: zccli sample [NAME] [--board <board>] [--clean]"
+			return 0
+			;;
+		--)
+			shift
+			break
+			;;
+		-*)
+			die "unknown sample option '$1' (try: zccli help)"
+			;;
+		*)
+			if [ -n "$name" ]; then
+				die "sample takes at most one name (got '$name' and '$1')"
+			fi
+			name="$1"
+			shift
+			;;
+		esac
+	done
+
+	require_build_root
+
+	local -a available=()
+	local s
+	while IFS= read -r s; do
+		available+=("$s")
+	done < <(list_samples)
+
+	if [ "${#available[@]}" -eq 0 ]; then
+		die "no sample apps are bundled in this image."
+	fi
+
+	# Bare `zccli sample`: show the menu rather than guessing.
+	if [ -z "$name" ]; then
+		log "zccli: bundled samples -- build one with:  zccli sample <name>"
+		log ""
+		for s in "${available[@]}"; do
+			log "  $s"
+		done
+		log ""
+		log "  add --board to override $DEFAULT_BOARD"
+		return 0
+	fi
+
+	local known=""
+	for s in "${available[@]}"; do
+		if [ "$s" = "$name" ]; then
+			known=1
+		fi
+	done
+	if [ -z "$known" ]; then
+		die "no sample called '$name'.
+       available: ${available[*]}"
+	fi
+
+	local sdir="$SAMPLES_DIR/$name"
+	[ -f "$sdir/CMakeLists.txt" ] || die "sample '$name' is incomplete (no CMakeLists.txt)"
+	[ -f "$sdir/prj.conf" ] || die "sample '$name' is incomplete (no prj.conf)"
+
+	# motor_hmi only ships an H743 overlay; say so before west fails obscurely.
+	if [ -d "$sdir/boards" ] &&
+		[ ! -f "$sdir/boards/$board.overlay" ] &&
+		[ ! -f "$sdir/boards/$board.conf" ]; then
+		err "note: sample '$name' ships no '$board' overlay; it may build without a display"
+	fi
+
+	log "zccli: sample   $name"
+	log "zccli: board    $board"
+
+	local bdir pargs=()
+	bdir="$(build_dir_for "$board" "$name")"
+	[ "$clean" -eq 1 ] && pargs+=(-p always)
+
+	TMPLOG="$(mktemp)"
+
+	cd "$WORKDIR"
+	log ""
+	if ! west build -b "$board" -d "$bdir" "${pargs[@]+"${pargs[@]}"}" "$sdir" 2>&1 | tee "$TMPLOG"; then
+		log ""
+		err "BUILD FAILED -- see the compiler error above."
+		err "The first error usually points at the real problem:"
+		grep -E -m 3 'error:|Error [0-9]' "$TMPLOG" >&2 || true
+		exit 1
+	fi
+
+	write_last sample "$name" "$board"
 	report_usage "$TMPLOG" "$bdir"
 	log ""
 	cmd_export "$board"
@@ -281,12 +473,10 @@ cmd_build() {
 # --------------------------------------------------------------- export
 
 cmd_export() {
-	local board="${1:-$DEFAULT_BOARD}"
-	local bdir srcdir
+	resolve_last "${1:-}"
+	local srcdir="$TARGET_BDIR/zephyr"
 
-	bdir="$(build_dir_for "$board")"
-	srcdir="$bdir/zephyr"
-	[ -d "$srcdir" ] || die "no build for board '$board' yet (run: zccli build)"
+	[ -d "$srcdir" ] || die "no build for board '$TARGET_BOARD' yet (run: zccli build or zccli sample)"
 
 	mkdir -p "$OUT"
 	local f n=0
@@ -306,18 +496,21 @@ cmd_export() {
 # ----------------------------------------------------------------- size
 
 cmd_size() {
-	local board="${1:-$DEFAULT_BOARD}"
-	local bdir outlog
+	resolve_last "${1:-}"
+	local bdir="$TARGET_BDIR"
+	local board="$TARGET_BOARD"
+	local outlog
 
-	require_app
 	require_build_root
-	bdir="$(build_dir_for "$board")"
-	[ -d "$bdir" ] || die "no build for board '$board' yet (run: zccli build)"
+	[ -d "$bdir" ] || die "no build for board '$board' yet (run: zccli build or zccli sample)"
 
-	# Stage first, exactly as `build` does: a fresh container has an empty
-	# template, and reconfiguring without the project's sources would relink
-	# a placeholder firmware over the real artifacts in the shared cache.
-	stage_user_files
+	# Only the template needs its sources staged. A sample build is
+	# self-contained: staging here would copy the project's .c files into a
+	# template that this command is not going to build.
+	if [ "$TARGET_KIND" = "template" ]; then
+		require_app
+		stage_user_files
+	fi
 
 	# The FLASH/RAM table is printed by the final link step. On a no-op build
 	# west skips linking entirely, which made `zccli size` print nothing at
@@ -341,14 +534,13 @@ cmd_size() {
 # ---------------------------------------------------------------- clean
 
 cmd_clean() {
-	local board="${1:-$DEFAULT_BOARD}"
-	local bdir
-	bdir="$(build_dir_for "$board")"
+	resolve_last "${1:-}"
+	local bdir="$TARGET_BDIR"
 	if [ -d "$bdir" ]; then
 		rm -rf "$bdir"
 		log "zccli: removed $bdir"
 	else
-		log "zccli: nothing to clean for '$board'"
+		log "zccli: nothing to clean for '$TARGET_BOARD'"
 	fi
 }
 
@@ -393,6 +585,20 @@ cmd_doctor() {
 	check "HMI module (Kconfig)" test -f "$APP/../../Kconfig"
 	check "board overlay for $DEFAULT_BOARD" test -f "$APP/boards/$DEFAULT_BOARD.overlay"
 
+	# Demo apps that `zccli sample` can build.
+	local -a sample_names=()
+	local sn
+	while IFS= read -r sn; do
+		sample_names+=("$sn")
+	done < <(list_samples)
+	if [ "${#sample_names[@]}" -gt 0 ]; then
+		log "  ok    samples (${#sample_names[@]}): ${sample_names[*]}"
+		ok=$((ok + 1))
+	else
+		log "  warn  no sample apps bundled"
+		warn=$((warn + 1))
+	fi
+
 	# `-d "$SRC"` alone is not enough: the image creates /src, so it is
 	# always present and writable even with no -v mount at all. findmnt
 	# reports "/" for the container rootfs and "/src" only for a real bind
@@ -434,12 +640,16 @@ cmd_doctor() {
 	# Deliberately NOT re-running `west build` here: doctor runs in a fresh
 	# container whose template has no user sources, so a build would reconfigure
 	# the app and relink placeholder firmware over the real artifacts.
-	local bdir sizefile line
-	bdir="$(build_dir_for "$DEFAULT_BOARD")"
-	sizefile="$bdir/zccli-size.txt"
+	local sizefile line buildlabel
+	resolve_last
+	sizefile="$TARGET_BDIR/zccli-size.txt"
+	buildlabel="$TARGET_BOARD"
+	if [ "$TARGET_KIND" = "sample" ]; then
+		buildlabel="$TARGET_NAME ($TARGET_BOARD)"
+	fi
 	if [ -f "$sizefile" ]; then
 		log ""
-		log "  last build ($DEFAULT_BOARD):"
+		log "  last build -- $buildlabel:"
 		log "  memory"
 		while IFS= read -r line; do
 			printf '    %s\n' "$line"
@@ -471,6 +681,7 @@ cmd="${1:-help}"
 
 case "$cmd" in
 build) cmd_build "$@" ;;
+sample | samples) cmd_sample "$@" ;;
 export) cmd_export "$@" ;;
 size) cmd_size "$@" ;;
 clean) cmd_clean "$@" ;;
