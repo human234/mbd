@@ -8,6 +8,7 @@
 #include <hmi/hmi_tabs.h>
 #include <hmi/hmi_chart.h>
 #include <hmi/hmi_polar.h>
-#include <hmi/hmi_screen.h>
+#include <hmi/hmi_label.h>
+#include <hmi/hmi_choice.h>
 
 #endif /* HMI_H */

@@ -5,7 +5,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define HMI_MAX_SLIDERS 8
+/* 12: the Motor Control HMI needs 10 (MAIN 1 + CONTROL 3 + TUNING 6).
+ * Slots are ~72 B each, so the extra headroom costs ~288 B of .bss.
+ */
+#define HMI_MAX_SLIDERS 12
 
 typedef void (*hmi_slider_cb_t)(lv_obj_t *slider, double value, void *user_data);
 

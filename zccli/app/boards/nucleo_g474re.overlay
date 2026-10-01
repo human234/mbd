@@ -1,0 +1,155 @@
+/*
+ * SPI1 is pre-configured in nucleo_g474re.dts on PA5/PA6/PA7 with
+ * cs-gpios = PB6. The ILI9488 panel is driven through a zephyr,mipi-dbi-spi
+ * controller on SPI1 with PC8=RESET, PC6=DC as GPIOs.
+ *
+ * Pin conflicts resolved here:
+ *  - green LED on PA5                  -> leds/pwmleds/timers2 disabled (PA5 = SPI1 SCK)
+ *  - console/shell on lpuart1 (PA2/PA3) -> ST-LINK VCP (/dev/ttyACM0); usart1 (PC4/PC5) disabled
+ *  - spi2 (PB12-15) disabled, its pins are not used
+ *  - spi3 (PC10-12) carries the XPT2046 resistive touch of the MSP3520:
+ *      T_CLK=PC10(SCK) T_DIN=PC12(MOSI) T_DO=PC11(MISO)
+ *      T_CS=PA15(GPIO CS, replaces the spi3 NSS alt-function)
+ *      T_IRQ=PB7(GPIO, active-low pen-down edge IRQ)
+ *
+ * Board 3V3 and 5V header rails power the panel (backlight/VIN), no DT node.
+ */
+
+#include <zephyr/dt-bindings/display/panel.h>
+#include <zephyr/dt-bindings/dma/stm32_dma.h>
+#include <freq.h>
+
+/ {
+    chosen {
+        zephyr,console = &lpuart1;
+        zephyr,shell-uart = &lpuart1;
+        zephyr,display = &ili9488_lcd;
+        zephyr,touch = &xpt2046;
+    };
+
+    mipi_dbi: mipi_dbi {
+        compatible = "zephyr,mipi-dbi-spi";
+        spi-dev = <&spi1>;
+        dc-gpios = <&gpioc 6 GPIO_ACTIVE_HIGH>;
+        reset-gpios = <&gpioc 8 GPIO_ACTIVE_LOW>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        status = "okay";
+
+        ili9488_lcd: ili9488@0 {
+            compatible = "ilitek,ili9488";
+            reg = <0>;
+            mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
+            /* 84 MHz = APB2/2, the SPI1 ceiling for this board's clock.
+             * Tuned: 42.5/22 MHz glitch-free, 84 MHz clean on this wiring. */
+            mipi-max-frequency = <DT_FREQ_M(43)>;
+            /* Physical GRAM is 320x480; rotation 0 keeps the panel in its
+             * native portrait orientation so the HMI demo matches the
+             * 320x480 Linux simulator layout (MADCTL BGR only). */
+            width = <320>;
+            height = <480>;
+            /* RGB_888: the ILI9488 is driven in its native 18-bit RGB666 mode
+             * (COLMOD 0x66, 3 bytes/pixel), the only mode validated to render
+             * correct colors on this panel through the 4-wire SPI path. */
+            pixel-format = <PANEL_PIXEL_FORMAT_RGB_888>;
+            rotation = <180>;
+            /* LCDWIKI MSP3520 initsq16 register table. */
+            frmctr1 = [b0 11];
+            disctrl = [02 22 3b];
+            pwctrl1 = [11 09];
+            pwctrl2 = [41];
+            vmctrl = [00 0a 80 40];
+            pgamctrl = [00 07 10 09 17 0b 41 89 4b 0a 0c 0e 18 1b 0f];
+            ngamctrl = [00 17 1a 04 0e 06 2f 45 43 02 0a 09 32 36 0f];
+            status = "okay";
+        };
+    };
+};
+
+&leds {
+    status = "disabled";
+};
+
+&usart1 {
+    status = "disabled";
+};
+
+/ {
+    pwmleds {
+        status = "disabled";
+    };
+};
+
+&timers2 {
+    status = "disabled";
+};
+
+&spi2 {
+    status = "disabled";
+};
+
+&spi3 {
+	/* PA15 becomes a GPIO chip-select for the touch controller instead
+	 * of the spi3 NSS alternate function. */
+	pinctrl-0 = <&spi3_sck_pc10 &spi3_miso_pc11 &spi3_mosi_pc12>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioa 15 GPIO_ACTIVE_LOW>;
+
+	/* Upstream Zephyr xptek,xpt2046 (interleaved Z/X/Y read + cal). */
+	xpt2046: xpt2046@0 {
+		compatible = "xptek,xpt2046";
+		reg = <0>;
+		spi-max-frequency = <DT_FREQ_M(10)>;
+		int-gpios = <&gpiob 7 GPIO_ACTIVE_LOW>;
+
+		/* Calibrated so a tap on the Gauges tab (top-left) lands on
+		 * LVGL (0,0). Measured Gauges-tab tap: raw (3907, 683) =>
+		 * that corner maps to the X maximum and Y minimum. The touch
+		 * axes land X-increasing left-to-right and Y-increasing
+		 * downward on the panel; min-x comes from the rightmost tab
+		 * (raw ~416 in a tab-row sweep), max-y stays a placeholder
+		 * until a bottom-corner tap is measured. Driver maps
+		 * min/max raw -> 0..touchscreen-size-*, then touchscreen-common
+		 * scales into the ili9488 320x480 panel; screen-width/height
+		 * must match that span or scaling is skipped. */
+		min-x = <1300>;
+		max-x = <4095>;
+		min-y = <683>;
+		max-y = <3800>;
+		touchscreen-size-x = <4096>;
+		touchscreen-size-y = <4096>;
+		z-threshold = <100>;
+		reads = <4>;
+
+		/* Invert Y so LVGL y=0 is the raw-y-minimum edge (the Gauges
+		 * tab). If the first bottom-corner tap lands mirror-inverted,
+		 * flip this to max-y = <683> with no inverted-y instead. */
+		inverted-y;
+
+		screen-width = <4096>;
+		screen-height = <4096>;
+		display = <&ili9488_lcd>;
+	};
+};
+
+&dma1 {
+	status = "okay";
+	/* G4 DMA1 has 8 channels; CH1..CH8 = IRQ 11..17, 96. The
+	 * interrupts property is missing from stm32g4.dtsi but required
+	 * by st,stm32-dma (without it the dma1 node can't be enabled). */
+	interrupts = <11 0>, <12 0>, <13 0>, <14 0>, <15 0>, <16 0>, <17 0>, <96 0>;
+};
+
+&dmamux1 {
+	status = "okay";
+};
+
+&spi1 {
+	/* dmamux1 ch0/ch1 route to DMA1 streams 1/2 (dma-offset 0).
+	 * G4 DMAMUX request IDs: SPI1_RX = 10, SPI1_TX = 11. */
+	dmas = <&dmamux1 1 11 (STM32_DMA_PERIPH_TX | STM32_DMA_PERIPH_8BITS |
+			       STM32_DMA_MEM_8BITS | STM32_DMA_PRIORITY_HIGH)>,
+	       <&dmamux1 0 10 (STM32_DMA_PERIPH_RX | STM32_DMA_PERIPH_8BITS |
+			       STM32_DMA_MEM_8BITS | STM32_DMA_PRIORITY_HIGH)>;
+	dma-names = "tx", "rx";
+};

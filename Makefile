@@ -15,7 +15,11 @@ APP      ?= modules/hmi/samples/gauge_demo
 STAGE_DIR?= /tmp/hmi-stage
 REPO_DIR := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: help stage image build flash shell
+# zccli: the end-user toolchain image (Ubuntu base, pruned workspace, no
+# STM32CubeProgrammer -- flashing happens on the Windows host). See zccli/.
+ZCCLI_IMAGE ?= ghcr.io/human234/zccli:$(shell cat "$(REPO_DIR)zccli/VERSION" 2>/dev/null || echo 0.1.0)
+
+.PHONY: help stage image build flash shell zccli-stage zccli-image zccli-push
 
 help:
 	@echo "make stage   - stage .west/zephyr/SDK into $(STAGE_DIR)"
@@ -23,6 +27,19 @@ help:
 	@echo "make build   - build the HMI gauge demo ($(BOARD)) offline in Docker"
 	@echo "make flash   - build + flash the demo to the board (needs USB access)"
 	@echo "make shell   - open an interactive shell in the HMI Docker image"
+	@echo "make zccli-stage - stage workspace+SDK pruned for the zccli image"
+	@echo "make zccli-image - build $(ZCCLI_IMAGE)"
+	@echo "make zccli-push  - build + push $(ZCCLI_IMAGE)"
+
+zccli-stage:
+	"$(REPO_DIR)zccli/stage.sh" "$(STAGE_DIR)-zccli"
+
+zccli-image:
+	IMAGE="$(ZCCLI_IMAGE)" STAGE_DIR="$(STAGE_DIR)-zccli" "$(REPO_DIR)zccli/docker-build.sh"
+
+zccli-push:
+	IMAGE="$(ZCCLI_IMAGE)" STAGE_DIR="$(STAGE_DIR)-zccli" PUSH=1 "$(REPO_DIR)zccli/docker-build.sh"
+
 
 stage:
 	"$(REPO_DIR)docker/rebake-workspace.sh" "$(STAGE_DIR)"

@@ -1,0 +1,128 @@
+/*
+ * Motor Control HMI for ST NUCLEO-H743ZI -- LANDSCAPE 480x320.
+ *
+ * Same wiring as samples/display_demo (see that file for the pin rationale):
+ *  - Display SPI1: SCK=PA5(D13) MISO=PA6(D12) MOSI=PB5(D11) CS=PD14(D10)
+ *    DC=PC6, RESET=PC8
+ *  - Touch SPI3: SCK=PC10 MISO=PC11 MOSI=PC12, CS=PA15, IRQ=PE11(D5)
+ *
+ * The only delta from display_demo is `rotation = <180>` -> `<270>`:
+ *
+ *  1. The panel is native 320x480; 90/270 make ili9xxx_get_capabilities()
+ *     report 480x320, which is what LVGL and the 4-tab layout size against
+ *     (lvgl.c:389 creates the lv_display from cap.x/y_resolution).
+ *     Measured on hardware: <90> put the corner labels in the wrong places
+ *     and mirrored BOTH touch axes (x ran right-to-left, y bottom-to-top),
+ *     which is precisely a 180 deg error -- so <270> is the correct one.
+ *     `h-mirror` / `v-mirror` (ilitek,ili9xxx-common.yaml) remain the
+ *     fallback if a single axis is still flipped.
+ *
+ *  2. The touch node is deliberately left IDENTICAL to display_demo's.
+ *     lvgl_pointer_process_event() (zephyr/modules/lvgl/input/
+ *     lvgl_pointer_input.c:88-110) already rotates the incoming point into
+ *     the rotated frame using cap.current_orientation, e.g. for ROTATED_90:
+ *
+ *         point->x = tmp.y;  point->y = cap.y_resolution - tmp.x;
+ *
+ *     which only holds when tmp is in the panel's NATIVE 320x480 frame.
+ *     Swapping axes or scaling to 480x320 here would rotate twice and
+ *     leave the cursor diagonal/mirrored. There is no lvgl,pointer-input
+ *     node in this DT, so cfg->swap_xy / invert_x / invert_y are all false
+ *     and orientation rotation is LVGL's only transform -- which also means
+ *     touch follows whatever rotation the display reports, automatically.
+ *
+ *     inverted-x / inverted-y (native frame, raw digitizer axes) stay as
+ *     display_demo has them; the crosshair test in src/main.c decides
+ *     whether either needs flipping. min-x/max-x/min-y/max-y calibrate the
+ *     panel in its own physical frame and do not depend on rotation.
+ */
+
+#include <zephyr/dt-bindings/display/panel.h>
+#include <freq.h>
+
+/ {
+    chosen {
+        zephyr,display = &ili9488_lcd;
+        zephyr,touch = &xpt2046;
+    };
+
+    mipi_dbi: mipi_dbi {
+        compatible = "zephyr,mipi-dbi-spi";
+        spi-dev = <&spi1>;
+        dc-gpios = <&gpioc 6 GPIO_ACTIVE_HIGH>;
+        reset-gpios = <&gpioc 8 GPIO_ACTIVE_LOW>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        status = "okay";
+
+        ili9488_lcd: ili9488@0 {
+            compatible = "ilitek,ili9488";
+            reg = <0>;
+            mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
+            /* Panel register table matches the G4 build (same LCD module).
+             * H7 SPI1 kernel clock is PLL1_Q = 480 MHz; the reached wire
+             * rate may differ from the G4's ~43 MHz -> retune if needed. */
+            mipi-max-frequency = <DT_FREQ_M(43)>;
+            width = <320>;
+            height = <480>;
+            pixel-format = <PANEL_PIXEL_FORMAT_RGB_888>;
+            /* Landscape, verified: <90> renders 180 deg off on this panel
+             * and mirrors both touch axes; <270> is the correct sense. */
+            rotation = <270>;
+            frmctr1 = [b0 11];
+            /* 0x22 sets the SS bit. ilitek,ili9488.yaml warns a non-default
+             * SS value may interfere with rotation -- if the landscape
+             * image comes out mirrored or shifted, revert this to the
+             * binding default [02 02 3b] first. */
+            disctrl = [02 22 3b];
+            pwctrl1 = [11 09];
+            pwctrl2 = [41];
+            vmctrl = [00 0a 80 40];
+            pgamctrl = [00 07 10 09 17 0b 41 89 4b 0a 0c 0e 18 1b 0f];
+            ngamctrl = [00 17 1a 04 0e 06 2f 45 43 02 0a 09 32 36 0f];
+            status = "okay";
+        };
+    };
+};
+
+&spi1 {
+    /* pinctrl + cs-gpios are the board defaults (PA5/PA6/PB5, PD14). */
+    status = "okay";
+};
+
+&spi3 {
+    pinctrl-0 = <&spi3_sck_pc10 &spi3_miso_pc11 &spi3_mosi_pc12>;
+    pinctrl-names = "default";
+    cs-gpios = <&gpioa 15 GPIO_ACTIVE_LOW>;
+    status = "okay";
+
+    xpt2046: xpt2046@0 {
+        compatible = "xptek,xpt2046";
+        reg = <0>;
+        spi-max-frequency = <DT_FREQ_M(10)>;
+        /* PE11 = Arduino D5; PB7 (G4 wiring) stays lpuart1 RX here. */
+        int-gpios = <&gpioe 11 GPIO_ACTIVE_LOW>;
+
+        /* Raw XPT2046 cal is panel- and driver-raw, independent of the
+         * host MCU, so the values from the G4 stays valid on this panel. */
+        min-x = <1300>;
+        max-x = <4095>;
+        min-y = <683>;
+        max-y = <3800>;
+        touchscreen-size-x = <4096>;
+        touchscreen-size-y = <4096>;
+        z-threshold = <100>;
+        reads = <10>;
+
+        inverted-y;
+
+        /* NOTE: the `display` phandle must stay. INPUT_TOUCH_OUTPUT_DIM
+         * then picks up the panel's native 320x480, which is the frame
+         * lvgl_pointer_process_event() expects to receive before it
+         * applies the display orientation. Do not add swapped-x-y or
+         * override output-width/output-height here -- see the header. */
+        screen-width = <4096>;
+        screen-height = <4096>;
+        display = <&ili9488_lcd>;
+    };
+};
